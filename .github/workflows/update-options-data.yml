@@ -1,0 +1,537 @@
+name: Update Options Data
+
+on:
+  schedule:
+    # Run at 3 AM UTC on weekdays (Monday to Friday)
+    - cron: "0 3 * * 1-5"
+  workflow_dispatch: # Allow manual triggering
+    inputs:
+      target_date:
+        description: "Target date for data extraction (YYYY-MM-DD). Defaults to current date."
+        required: false
+        type: string
+      force_fresh_clone:
+        description: "Force fresh clone instead of using cache"
+        required: false
+        type: boolean
+        default: false
+
+env:
+  DOLT_DIR: "dolt_workspace"
+  DATABASE_DIR: "options"
+  OUTPUT_DIR: "data_output"
+  DATA_CSV: "options_data.csv"
+  DATES_CSV: "latest_date.csv"
+  API_DIR: "api"
+  SYMBOLS_JSON: "symbols.json"
+  METADATA_JSON: "metadata.json"
+  INDIV_SYMBOLS_DIR: "symbols"
+
+  # vars.NODE_VERSION: "22"
+  # vars.DOLT_VERSION: "1.58.0"
+  # vars.DOLT_REPO_URL: post-no-preference/options
+  # vars.DOLT_DATABASE: option_chain
+  # vars.NPM_CMD: process-data
+
+  # github.event.inputs.target_date
+  # github.event.inputs.force_fresh_clone
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ vars.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Cache Dolt installation
+        id: cache-dolt
+        uses: actions/cache@v4
+        with:
+          path: ~/.dolt
+          key: dolt-${{ vars.DOLT_VERSION }}-${{ runner.os }}
+          restore-keys: |
+            dolt-${{ vars.DOLT_VERSION }}-
+            dolt-
+
+      - name: Install Dolt
+        if: steps.cache-dolt.outputs.cache-hit != 'true'
+        run: |
+          sudo bash -c 'curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash'
+          echo "$HOME/.dolt/bin" >> $GITHUB_PATH
+
+      - name: Verify Dolt installation
+        run: |
+          dolt version
+          which dolt
+
+      - name: Cache Dolt database
+        id: cache-database
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DOLT_DIR }}/${{ env.DATABASE_DIR }}
+          key: dolt-options-db-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            dolt-options-db-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build TypeScript project
+        run: npm run build
+
+      - name: Set target date
+        run: |
+          if [ -n "${{ github.event.inputs.target_date }}" ]; then
+            echo "TARGET_DATE=${{ github.event.inputs.target_date }}" >> $GITHUB_ENV
+          else
+            echo "TARGET_DATE=$(date -u +%Y-%m-%d)" >> $GITHUB_ENV
+          fi
+
+      - name: Create directory for Dolt operations
+        run: |
+          mkdir -p ${{ env.DOLT_DIR }}
+
+      - name: Clone Dolt database
+        working-directory: ${{ env.DOLT_DIR }}
+        run: |
+          if [ "${{ github.event.inputs.force_fresh_clone }}" == "true" ] || [ ! -d "${{ env.DATABASE_DIR }}/.dolt" ]; then
+            echo "Performing fresh clone of dolt database..."
+            rm -rf ${{ env.DATABASE_DIR }}
+            dolt clone ${{ vars.DOLT_REPO_URL }} ${{ env.DATABASE_DIR }}
+            cd ${{ env.DATABASE_DIR }}
+            echo "Fresh clone completed"
+          else
+            echo "Using cached database, pulling latest changes..."
+            cd ${{ env.DATABASE_DIR }}
+            
+            # Configure remote if not already set
+            if ! dolt remote -v | grep -q "origin"; then
+              dolt remote add origin ${{ vars.DOLT_REPO_URL }}
+            fi
+            
+            # Pull latest changes
+            dolt pull origin master || {
+              echo "Pull failed, falling back to fresh clone..."
+              cd ..
+              rm -rf ${{ env.DATABASE_DIR }}
+              dolt clone ${{ vars.DOLT_REPO_URL }} ${{ env.DATABASE_DIR }}
+              cd ${{ env.DATABASE_DIR }}
+            }
+          fi
+
+          # Verify database is working
+          dolt sql -q "SHOW TABLES;" || {
+            echo "Database verification failed, attempting fresh clone..."
+            cd ..
+            rm -rf ${{ env.DATABASE_DIR }}
+            dolt clone ${{ vars.DOLT_REPO_URL }} ${{ env.DATABASE_DIR }}
+            cd ${{ env.DATABASE_DIR }}
+            dolt sql -q "SHOW TABLES;"
+          }
+
+      - name: Extract options data
+        working-directory: ${{ env.DOLT_DIR }}/${{ env.DATABASE_DIR }}
+        run: |
+          echo "Extracting data for date: $TARGET_DATE"
+
+          # Create output directory
+          mkdir -p ../../${{ env.OUTPUT_DIR }}
+
+          # Cache data csv path
+          DATA_CSV_PATH="${{ env.OUTPUT_DIR }}/${{ env.DATA_CSV }}"
+
+          # Export data to CSV for processing
+          dolt sql -q "
+            SELECT 
+              date,
+              act_symbol,
+              expiration,
+              strike,
+              call_put,
+              bid,
+              ask,
+              vol,
+              delta,
+              gamma,
+              theta,
+              vega,
+              rho
+            FROM ${{ vars.DOLT_DATABASE }} 
+            WHERE date = '$TARGET_DATE' 
+              AND (bid > 0 OR ask > 0)
+            ORDER BY act_symbol, expiration, call_put, strike
+          " -r csv > ../../"$DATA_CSV_PATH"
+
+          # Check if we got data
+          if [ ! -s ../../"$DATA_CSV_PATH" ] || [ $(wc -l < ../../"$DATA_CSV_PATH") -le 1 ]; then
+            echo "No data found for $TARGET_DATE, trying previous business day..."
+
+            # Cache dates csv path
+            DATES_CSV_PATH="${{ env.OUTPUT_DIR }}/${{ env.DATES_CSV }}"
+            
+            # Try to find the most recent data within the last 7 days
+            dolt sql -q "
+              SELECT DISTINCT date 
+              FROM ${{ vars.DOLT_DATABASE }} 
+              WHERE date >= DATE_SUB('$TARGET_DATE', INTERVAL 7 DAY) 
+                AND date <= '$TARGET_DATE'
+                AND (bid > 0 OR ask > 0)
+              ORDER BY date DESC 
+              LIMIT 1
+            " -r csv > ../../"$DATES_CSV_PATH"
+            
+            if [ -s ../../"$DATES_CSV_PATH" ] && [ $(wc -l < ../../"$DATES_CSV_PATH") -gt 1 ]; then
+              LATEST_DATE=$(tail -n 1 ../../"$DATES_CSV_PATH")
+              echo "Using latest available date: $LATEST_DATE"
+              echo "ACTUAL_DATE=$LATEST_DATE" >> $GITHUB_ENV
+              
+              dolt sql -q "
+                SELECT 
+                  date,
+                  act_symbol,
+                  expiration,
+                  strike,
+                  call_put,
+                  bid,
+                  ask,
+                  vol,
+                  delta,
+                  gamma,
+                  theta,
+                  vega,
+                  rho
+                FROM ${{ vars.DOLT_DATABASE }} 
+                WHERE date = '$LATEST_DATE' 
+                  AND (bid > 0 OR ask > 0)
+                ORDER BY act_symbol, expiration, call_put, strike
+              " -r csv > ../../"$DATA_CSV_PATH"
+            else
+              echo "No recent data found within the last 7 days"
+              exit 1
+            fi
+          else
+            echo "ACTUAL_DATE=$TARGET_DATE" >> $GITHUB_ENV
+          fi
+
+          # Verify we have data
+          echo "Data rows extracted: $(( $(wc -l < ../../"$DATA_CSV_PATH") - 1 ))"
+
+      - name: Database maintenance
+        working-directory: ${{ env.DOLT_DIR }}/${{ env.DATABASE_DIR }}
+        run: |
+          echo "Performing database maintenance..."
+
+          # Check database status
+          dolt status
+
+          # Clean up any uncommitted changes that might cause issues
+          dolt reset --hard HEAD || true
+
+          # Optional: garbage collection to reduce database size
+          # Uncomment if database size becomes an issue
+          # dolt gc
+
+      - name: Process data with TypeScript
+        run: |
+          echo "Processing options data..."
+          npm run ${{ vars.NPM_CMD }}
+        env:
+          DATA_INPUT_PATH: ./${{ env.OUTPUT_DIR }}/${{ env.DATA_CSV }}
+          API_OUTPUT_PATH: ./${{ env.API_DIR }}
+
+      - name: Validate generated API files
+        run: |
+          echo "Validating generated files..."
+
+          # Cache JSON path and symbols path
+          SYMBOLS_JSON_PATH="./${{ env.API_DIR }}/${{ env.SYMBOLS_JSON }}"
+          METADATA_JSON_PATH="./${{ env.API_DIR }}/${{ env.METADATA_JSON }}"
+          SYMBOLS_PATH="./${{ env.API_DIR }}/${{ env.INDIV_SYMBOLS_DIR }}"
+
+          # Check if required files exist
+          if [ ! -f "$SYMBOLS_JSON_PATH" ]; then
+            echo "Error: ${{ env.SYMBOLS_JSON }} not generated"
+            exit 1
+          fi
+
+          if [ ! -f "$METADATA_JSON_PATH" ]; then
+            echo "Error: ${{ env.METADATA_JSON }} not generated"
+            exit 1
+          fi
+
+          # Check if we have symbol files
+          SYMBOL_COUNT=$(find "$SYMBOLS_PATH" -name "*.json" 2>/dev/null | wc -l)
+          if [ "$SYMBOL_COUNT" -eq 0 ]; then
+            echo "Error: No symbol files generated"
+            exit 1
+          fi
+
+          echo "Generated $SYMBOL_COUNT symbol files"
+
+          # Validate JSON structure
+          echo "Validating JSON files..."
+          if ! jq empty "$SYMBOLS_JSON_PATH" 2>/dev/null; then
+            echo "Error: ${{ env.SYMBOLS_JSON }} is not valid JSON"
+            exit 1
+          fi
+
+          if ! jq empty "$METADATA_JSON_PATH" 2>/dev/null; then
+            echo "Error: ${{ env.METADATA_JSON }} is not valid JSON"
+            exit 1
+          fi
+
+          echo "All validations passed"
+
+      - name: Generate API documentation
+        run: |
+          echo "Generating API documentation..."
+
+          # Define repository url
+          REPO_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+
+          # Cache JSON path and symbols path
+          SYMBOLS_JSON_PATH="${{ env.API_DIR }}/${{ env.SYMBOLS_JSON }}"
+          METADATA_JSON_PATH="${{ env.API_DIR }}/${{ env.METADATA_JSON }}"
+          SYMBOLS_PATH="${{ env.API_DIR }}/${{ env.INDIV_SYMBOLS_DIR }}"
+
+          # Generate documentation
+          cat > ./${{ env.API_DIR }}/index.html << EOF
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Options Chain API</title>
+              <style>
+                  body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+                  code { background: #f4f4f4; padding: 2px 4px; border-radius: 3px; }
+                  pre { background: #f4f4f4; padding: 10px; border-radius: 5px; overflow-x: auto; }
+                  .endpoint { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+                  .method { color: #2e8b57; font-weight: bold; }
+              </style>
+          </head>
+          <body>
+              <h1>Options Chain API</h1>
+              <p>Free options chain data API updated daily on weekdays.</p>
+              
+              <div class="endpoint">
+                  <h3><span class="method">GET</span> /$SYMBOLS_JSON_PATH</h3>
+                  <p>Returns a list of all available symbols.</p>
+                  <pre><code>curl $REPO_URL/$SYMBOLS_JSON_PATH</code></pre>
+              </div>
+              
+              <div class="endpoint">
+                  <h3><span class="method">GET</span> /$SYMBOLS_PATH/{SYMBOL}.json</h3>
+                  <p>Returns all option contracts for a specific symbol.</p>
+                  <pre><code>curl $REPO_URL/$SYMBOLS_PATH/AAPL.json</code></pre>
+              </div>
+              
+              <div class="endpoint">
+                  <h3><span class="method">GET</span> /$METADATA_JSON_PATH</h3>
+                  <p>Returns metadata about the dataset including counts and last update time.</p>
+                  <pre><code>curl $REPO_URL/$METADATA_JSON_PATH</code></pre>
+              </div>
+              
+              <h3>Data Structure</h3>
+              <p>Each contract contains the following fields:</p>
+              <ul>
+                  <li><code>date</code> - Data date</li>
+                  <li><code>symbol</code> - Underlying symbol</li>
+                  <li><code>expiration</code> - Option expiration date</li>
+                  <li><code>strike</code> - Strike price</li>
+                  <li><code>type</code> - 'call' or 'put'</li>
+                  <li><code>bid</code> - Bid price</li>
+                  <li><code>ask</code> - Ask price</li>
+                  <li><code>volume</code> - Trading volume</li>
+                  <li><code>delta</code> - Delta Greek</li>
+                  <li><code>gamma</code> - Gamma Greek</li>
+                  <li><code>theta</code> - Theta Greek</li>
+                  <li><code>vega</code> - Vega Greek</li>
+                  <li><code>rho</code> - Rho Greek</li>
+              </ul>
+              
+              <h3>Rate Limits</h3>
+              <p>This API is served via GitHub Pages and subject to GitHub's usage policies. Please be respectful with request frequency.</p>
+              
+              <h3>Data Source</h3>
+              <p>Data is updated daily on weekdays at 3 AM UTC using the ${{ vars.DOLT_REPO_URL }} Dolt database.</p>
+              
+              <p><strong>Last Updated:</strong> <span id="lastUpdated">Loading...</span></p>
+              
+              <script>
+                  fetch('./${{ env.METADATA_JSON }}')
+                      .then(response => response.json())
+                      .then(data => {
+                          document.getElementById('lastUpdated').textContent = 
+                              new Date(data.lastUpdated).toLocaleString();
+                      })
+                      .catch(() => {
+                          document.getElementById('lastUpdated').textContent = 'Unknown';
+                      });
+              </script>
+          </body>
+          </html>
+          EOF
+
+      - name: Update README with statistics
+        run: |
+          echo "Updating README with latest statistics..."
+
+          # Define repository url
+          REPO_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+
+          # Cache metadata JSON path
+          METADATA_JSON_PATH="${{ env.API_DIR }}/${{ env.METADATA_JSON }}"
+
+          # Extract statistics from metadata
+          SYMBOL_COUNT=$(jq -r '.symbolCount' ./"$METADATA_JSON_PATH")
+          CONTRACT_COUNT=$(jq -r '.totalContracts' ./"$METADATA_JSON_PATH")
+          LAST_UPDATED=$(jq -r '.lastUpdated' ./"$METADATA_JSON_PATH")
+          DATA_DATE=$(jq -r '.dataDate' ./"$METADATA_JSON_PATH")
+
+          # Update README
+          cat > README.md << EOF
+          # Options Chain API
+
+          A free, daily-updated options chain data API served via GitHub Pages.
+
+          ## 📊 Current Statistics
+          - **Symbols:** $SYMBOL_COUNT
+          - **Total Contracts:** $CONTRACT_COUNT
+          - **Data Date:** $DATA_DATE
+          - **Last Updated:** $LAST_UPDATED
+
+          ## 🚀 API Endpoints
+
+          ### Base URL
+          \`$REPO_URL/${{ env.API_DIR }}/\`
+
+          ### Endpoints
+          - \`GET /${{ env.SYMBOLS_JSON }}\` - List of all available symbols
+          - \`GET /${{ env.INDIV_SYMBOLS_DIR }}/{SYMBOL}.json\` - All contracts for a specific symbol
+          - \`GET /${{ env.METADATA_JSON }}\` - Dataset metadata and statistics
+
+          ## 📖 Usage Examples
+
+          \`\`\`bash
+          # Get all available symbols
+          curl $REPO_URL/${{ env.API_DIR }}/${{ env.SYMBOLS_JSON }}
+
+          # Get AAPL options
+          curl $REPO_URL/${{ env.API_DIR }}/${{ env.INDIV_SYMBOLS_DIR }}/AAPL.json
+
+          # Get metadata
+          curl $REPO_URL/$METADATA_JSON_PATH
+          \`\`\`
+
+          ## 🔄 Update Schedule
+          Data is automatically updated every weekday at 3 AM UTC using GitHub Actions.
+
+          ## 📁 Data Structure
+          Each option contract includes:
+          - Basic info: symbol, expiration, strike, type (call/put)
+          - Pricing: bid, ask
+          - Volume and Greeks: volume, delta, gamma, theta, vega, rho
+
+          ## 🛠️ Technical Details
+          - **Data Source:** [${{ vars.DOLT_REPO_URL }}](https://www.dolthub.com/repositories/${{ vars.DOLT_REPO_URL }}) Dolt database
+          - **Processing:** TypeScript with GitHub Actions
+          - **Hosting:** GitHub Pages (free tier)
+          - **Update Frequency:** Weekdays only
+
+          ## ⚡ Performance
+          - Individual symbol files are optimized for size
+          - Data is compressed and cached
+          - Only active contracts (bid > 0 OR ask > 0) are included
+
+          ## 📝 License
+          This data is provided for educational and research purposes. Please ensure compliance with your intended usage.
+
+          ---
+          *Generated automatically by GitHub Actions*
+          EOF
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+          # Cache metadata JSON path
+          METADATA_JSON_PATH="${{ env.API_DIR }}/${{ env.METADATA_JSON }}"
+
+          # Check if there are changes to commit
+          if [ -n "$(git status --porcelain)" ]; then
+            git add ${{ env.API_DIR }}/ README.md
+            git commit -m "🔄 Update options data for ${ACTUAL_DATE:-$TARGET_DATE}
+            
+            - Symbols: $(jq -r '.symbolCount' ./"$METADATA_JSON_PATH")
+            - Contracts: $(jq -r '.totalContracts' ./"$METADATA_JSON_PATH")
+            - Data date: $(jq -r '.dataDate' ./"$METADATA_JSON_PATH")"
+            
+            git push
+            echo "Changes committed and pushed"
+          else
+            echo "No changes to commit"
+          fi
+
+      - name: Setup Pages
+        if: github.ref == 'refs/heads/master'
+        uses: actions/configure-pages@v4
+
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/master'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "./${{ env.API_DIR }}"
+
+      - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/master'
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Cleanup temporary files
+        if: always()
+        run: |
+          rm -rf ${{ env.OUTPUT_DIR }}
+
+      - name: Report workflow status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            # Cache metadata JSON path
+            METADATA_JSON_PATH="${{ env.API_DIR }}/${{ env.METADATA_JSON }}"
+
+            echo "✅ Workflow completed successfully"
+            echo "📅 Data date: ${ACTUAL_DATE:-$TARGET_DATE}"
+            echo "📊 Symbols processed: $(jq -r '.symbolCount' ./"$METADATA_JSON_PATH" 2>/dev/null || echo 'N/A')"
+            echo "📈 Total contracts: $(jq -r '.totalContracts' ./"$METADATA_JSON_PATH" 2>/dev/null || echo 'N/A')"
+
+            if [ "${{ steps.cache-database.outputs.cache-hit }}" == "true" ]; then
+              echo "🚀 Used cached database for faster execution"
+            else
+              echo "📥 Fresh database clone performed"
+            fi
+          else
+            echo "❌ Workflow failed"
+            echo "Check the logs above for error details"
+          fi
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "🚨 Options data update failed for $TARGET_DATE"
+          echo "Please check the workflow logs for details"
+          # Add notification logic here (email, Slack, etc.) if needed

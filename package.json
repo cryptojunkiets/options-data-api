@@ -1,0 +1,44 @@
+{
+  "name": "options-data-api",
+  "version": "1.0.0",
+  "description": "TypeScript processor for options chain data with GitHub Actions integration",
+  "main": "dist/data-processor.js",
+  "scripts": {
+    "build": "npx tsc",
+    "build:watch": "tsc --watch",
+    "process-data": "node dist/data-processor.js",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "test": "ts-node src/test.ts",
+    "dev": "ts-node src/data-processor.ts",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "options",
+    "trading",
+    "data-processing",
+    "typescript",
+    "github-actions"
+  ],
+  "author": "Travis",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.41.0",
+    "@typescript-eslint/parser": "^8.41.0",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "jest": "^29.0.0",
+    "prettier": "^3.6.2",
+    "ts-node": "^10.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cryptojunkiets/options-data-api.git"
+  }
+}

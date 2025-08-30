@@ -1,0 +1,41 @@
+# dependencies
+/node_modules
+
+# build artifacts
+/dist
+/build
+/out
+/es
+/lib
+/tmp
+/coverage
+/docs
+/data_output
+
+# tsconfig.tsbuildinfo for incremental builds
+/tsconfig.tsbuildinfo
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# environments
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# misc
+*.log
+.DS_Store
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# os
+.DS_Store
+Thumbs.db
