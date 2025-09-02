@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2025-09-02
+
+### 🔧 Fixed
+
+- **API Path Configuration**
+  - **Documentation URLs**: Fixed API endpoint documentation to reflect correct GitHub Pages URL structure
+  - **Base URL**: Removed `/api/` prefix from API documentation since GitHub Pages serves the api directory contents as root
+  - **Endpoint Examples**: Updated all curl examples and documentation to use correct paths:
+    - `GET /symbols.json` (instead of `/api/symbols.json`)
+    - `GET /symbols/{SYMBOL}.json` (instead of `/api/symbols/{SYMBOL}.json`)
+    - `GET /metadata.json` (instead of `/api/metadata.json`)
+  - **JavaScript References**: Updated client-side fetch calls in documentation to use correct relative paths
+
+### 📝 Changed
+
+- **README Generation**: Updated README template to reflect accurate API endpoint URLs
+- **API Documentation**: Corrected all endpoint examples and base URL references
+
 ## [1.0.1] - 2025-09-02
 
 ### 🔧 Changed

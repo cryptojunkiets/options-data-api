@@ -3,29 +3,29 @@ name: Update Options Data
 on:
   schedule:
     # Run at 3 AM UTC on weekdays (Monday to Friday)
-    - cron: "0 3 * * 1-5"
+    - cron: '0 3 * * 1-5'
   workflow_dispatch: # Allow manual triggering
     inputs:
       target_date:
-        description: "Target date for data extraction (YYYY-MM-DD). Defaults to current date."
+        description: 'Target date for data extraction (YYYY-MM-DD). Defaults to current date.'
         required: false
         type: string
       force_fresh_clone:
-        description: "Force fresh clone instead of using cache"
+        description: 'Force fresh clone instead of using cache'
         required: false
         type: boolean
         default: false
 
 env:
-  DOLT_DIR: "dolt_workspace"
-  DATABASE_DIR: "options"
-  OUTPUT_DIR: "data_output"
-  DATA_CSV: "options_data.csv"
-  DATES_CSV: "latest_date.csv"
-  API_DIR: "api"
-  SYMBOLS_JSON: "symbols.json"
-  METADATA_JSON: "metadata.json"
-  INDIV_SYMBOLS_DIR: "symbols"
+  DOLT_DIR: 'dolt_workspace'
+  DATABASE_DIR: 'options'
+  OUTPUT_DIR: 'data_output'
+  DATA_CSV: 'options_data.csv'
+  DATES_CSV: 'latest_date.csv'
+  API_DIR: 'api'
+  SYMBOLS_JSON: 'symbols.json'
+  METADATA_JSON: 'metadata.json'
+  INDIV_SYMBOLS_DIR: 'symbols'
 
   # vars.NODE_VERSION: "22"
   # vars.DOLT_VERSION: "1.58.0"
@@ -56,7 +56,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ vars.NODE_VERSION }}
-          cache: "npm"
+          cache: 'npm'
 
       - name: Cache Dolt installation
         id: cache-dolt
@@ -305,9 +305,9 @@ jobs:
           REPO_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
 
           # Cache JSON path and symbols path
-          SYMBOLS_JSON_PATH="${{ env.API_DIR }}/${{ env.SYMBOLS_JSON }}"
-          METADATA_JSON_PATH="${{ env.API_DIR }}/${{ env.METADATA_JSON }}"
-          SYMBOLS_PATH="${{ env.API_DIR }}/${{ env.INDIV_SYMBOLS_DIR }}"
+          SYMBOLS_JSON_FILE="${{ env.SYMBOLS_JSON }}"
+          METADATA_JSON_FILE="${{ env.METADATA_JSON }}" 
+          SYMBOLS_DIR="${{ env.INDIV_SYMBOLS_DIR }}"
 
           # Generate documentation
           cat > ./${{ env.API_DIR }}/index.html << EOF
@@ -330,21 +330,21 @@ jobs:
               <p>Free options chain data API updated daily on weekdays.</p>
               
               <div class="endpoint">
-                  <h3><span class="method">GET</span> /$SYMBOLS_JSON_PATH</h3>
+                  <h3><span class="method">GET</span> /$SYMBOLS_JSON_FILE</h3>
                   <p>Returns a list of all available symbols.</p>
-                  <pre><code>curl $REPO_URL/$SYMBOLS_JSON_PATH</code></pre>
+                  <pre><code>curl $REPO_URL/$SYMBOLS_JSON_FILE</code></pre>
               </div>
               
               <div class="endpoint">
-                  <h3><span class="method">GET</span> /$SYMBOLS_PATH/{SYMBOL}.json</h3>
+                  <h3><span class="method">GET</span> /$SYMBOLS_DIR/{SYMBOL}.json</h3>
                   <p>Returns all option contracts for a specific symbol.</p>
-                  <pre><code>curl $REPO_URL/$SYMBOLS_PATH/AAPL.json</code></pre>
+                  <pre><code>curl $REPO_URL/$SYMBOLS_DIR/AAPL.json</code></pre>
               </div>
               
               <div class="endpoint">
-                  <h3><span class="method">GET</span> /$METADATA_JSON_PATH</h3>
+                  <h3><span class="method">GET</span> /$METADATA_JSON_FILE</h3>
                   <p>Returns metadata about the dataset including counts and last update time.</p>
-                  <pre><code>curl $REPO_URL/$METADATA_JSON_PATH</code></pre>
+                  <pre><code>curl $REPO_URL/$METADATA_JSON_FILE</code></pre>
               </div>
               
               <h3>Data Structure</h3>
@@ -374,7 +374,7 @@ jobs:
               <p><strong>Last Updated:</strong> <span id="lastUpdated">Loading...</span></p>
               
               <script>
-                  fetch('./${{ env.METADATA_JSON }}')
+                  fetch('./$METADATA_JSON_FILE')
                       .then(response => response.json())
                       .then(data => {
                           document.getElementById('lastUpdated').textContent = 
@@ -419,7 +419,7 @@ jobs:
           ## 🚀 API Endpoints
 
           ### Base URL
-          \`$REPO_URL/${{ env.API_DIR }}/\`
+          \`$REPO_URL/\`
 
           ### Endpoints
           - \`GET /${{ env.SYMBOLS_JSON }}\` - List of all available symbols
@@ -430,13 +430,13 @@ jobs:
 
           \`\`\`bash
           # Get all available symbols
-          curl $REPO_URL/${{ env.API_DIR }}/${{ env.SYMBOLS_JSON }}
+          curl $REPO_URL/${{ env.SYMBOLS_JSON }}
 
           # Get AAPL options
-          curl $REPO_URL/${{ env.API_DIR }}/${{ env.INDIV_SYMBOLS_DIR }}/AAPL.json
+          curl $REPO_URL/${{ env.INDIV_SYMBOLS_DIR }}/AAPL.json
 
           # Get metadata
-          curl $REPO_URL/$METADATA_JSON_PATH
+          curl $REPO_URL/${{ env.METADATA_JSON }}
           \`\`\`
 
           ## 🔄 Update Schedule
@@ -497,7 +497,7 @@ jobs:
         if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v3
         with:
-          path: "./${{ env.API_DIR }}"
+          path: './${{ env.API_DIR }}'
 
       - name: Deploy to GitHub Pages
         if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
