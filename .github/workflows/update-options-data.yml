@@ -37,26 +37,18 @@ env:
   # github.event.inputs.force_fresh_clone
 
 jobs:
-  update-data:
+  # Job 1: Setup and data extraction
+  extract-data:
     runs-on: ubuntu-latest
-    environment: github-pages
-
-    permissions:
-      contents: write
-      pages: write
-      id-token: write
+    outputs:
+      actual-date: ${{ steps.extract.outputs.actual-date }}
+      data-available: ${{ steps.extract.outputs.data-available }}
+      cache-hit: ${{ steps.cache-database.outputs.cache-hit }}
+      source-changed: ${{ steps.check-source.outputs.source-changed }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ vars.NODE_VERSION }}
-          cache: 'npm'
 
       - name: Cache Dolt installation
         id: cache-dolt
@@ -67,6 +59,9 @@ jobs:
           restore-keys: |
             dolt-${{ vars.DOLT_VERSION }}-
             dolt-
+
+      - name: Add Dolt to PATH
+        run: echo "$HOME/.dolt/bin" >> $GITHUB_PATH
 
       - name: Install Dolt
         if: steps.cache-dolt.outputs.cache-hit != 'true'
@@ -87,12 +82,6 @@ jobs:
           key: dolt-options-db-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             dolt-options-db-
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build TypeScript project
-        run: npm run build
 
       - name: Set target date
         run: |
@@ -144,7 +133,23 @@ jobs:
             dolt sql -q "SHOW TABLES;"
           }
 
+      - name: Check if update needed
+        id: check-update
+        run: |
+          # Check if we already have data for this date
+          if [ -f "./${{ env.API_DIR }}/${{ env.METADATA_JSON }}" ]; then
+            EXISTING_DATE=$(jq -r '.dataDate' ./${{ env.API_DIR }}/${{ env.METADATA_JSON }})
+            if [ "$EXISTING_DATE" = "$TARGET_DATE" ]; then
+              echo "Data already up to date for $TARGET_DATE"
+              echo "skip-update=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+          echo "skip-update=false" >> $GITHUB_OUTPUT
+
       - name: Extract options data
+        id: extract
+        if: steps.check-update.outputs.skip-update != 'true'
         working-directory: ${{ env.DOLT_DIR }}/${{ env.DATABASE_DIR }}
         run: |
           echo "Extracting data for date: $TARGET_DATE"
@@ -155,79 +160,46 @@ jobs:
           # Cache data csv path
           DATA_CSV_PATH="${{ env.OUTPUT_DIR }}/${{ env.DATA_CSV }}"
 
-          # Export data to CSV for processing
-          dolt sql -q "
-            SELECT 
-              date,
-              act_symbol,
-              expiration,
-              strike,
-              call_put,
-              bid,
-              ask,
-              vol,
-              delta,
-              gamma,
-              theta,
-              vega,
-              rho
-            FROM ${{ vars.DOLT_DATABASE }} 
-            WHERE date = '$TARGET_DATE' 
-              AND (bid > 0 OR ask > 0)
-            ORDER BY act_symbol, expiration, call_put, strike
-          " -r csv > ../../"$DATA_CSV_PATH"
+          # First check if data exists for target date (fast query)
+          DATA_EXISTS=$(dolt sql -q "SELECT COUNT(*) as count FROM ${{ vars.DOLT_DATABASE }} WHERE date = '$TARGET_DATE' AND (bid > 0 OR ask > 0) LIMIT 1" -r csv | tail -n 1)
 
-          # Check if we got data
-          if [ ! -s ../../"$DATA_CSV_PATH" ] || [ $(wc -l < ../../"$DATA_CSV_PATH") -le 1 ]; then
-            echo "No data found for $TARGET_DATE, trying previous business day..."
-
-            # Cache dates csv path
-            DATES_CSV_PATH="${{ env.OUTPUT_DIR }}/${{ env.DATES_CSV }}"
-            
-            # Try to find the most recent data within the last 7 days
-            dolt sql -q "
-              SELECT DISTINCT date 
+          if [ "$DATA_EXISTS" -gt 0 ]; then
+            QUERY_DATE="$TARGET_DATE"
+            echo "actual-date=$TARGET_DATE" >> $GITHUB_OUTPUT
+          else
+            # Find latest date efficiently with index
+            LATEST_DATE=$(dolt sql -q "
+              SELECT date 
               FROM ${{ vars.DOLT_DATABASE }} 
               WHERE date >= DATE_SUB('$TARGET_DATE', INTERVAL 7 DAY) 
                 AND date <= '$TARGET_DATE'
                 AND (bid > 0 OR ask > 0)
               ORDER BY date DESC 
               LIMIT 1
-            " -r csv > ../../"$DATES_CSV_PATH"
+            " -r csv | tail -n 1)
             
-            if [ -s ../../"$DATES_CSV_PATH" ] && [ $(wc -l < ../../"$DATES_CSV_PATH") -gt 1 ]; then
-              LATEST_DATE=$(tail -n 1 ../../"$DATES_CSV_PATH")
-              echo "Using latest available date: $LATEST_DATE"
-              echo "ACTUAL_DATE=$LATEST_DATE" >> $GITHUB_ENV
-              
-              dolt sql -q "
-                SELECT 
-                  date,
-                  act_symbol,
-                  expiration,
-                  strike,
-                  call_put,
-                  bid,
-                  ask,
-                  vol,
-                  delta,
-                  gamma,
-                  theta,
-                  vega,
-                  rho
-                FROM ${{ vars.DOLT_DATABASE }} 
-                WHERE date = '$LATEST_DATE' 
-                  AND (bid > 0 OR ask > 0)
-                ORDER BY act_symbol, expiration, call_put, strike
-              " -r csv > ../../"$DATA_CSV_PATH"
-            else
-              echo "No recent data found within the last 7 days"
+            if [ -z "$LATEST_DATE" ]; then
+              echo "No recent data found"
+              echo "data-available=false" >> $GITHUB_OUTPUT
               exit 1
             fi
-          else
-            echo "ACTUAL_DATE=$TARGET_DATE" >> $GITHUB_ENV
+            
+            QUERY_DATE="$LATEST_DATE"
+            echo "actual-date=$LATEST_DATE" >> $GITHUB_OUTPUT
           fi
 
+          # Export data to CSV for processing
+          dolt sql -q "
+            SELECT /*+ USE_INDEX(date_idx) */ 
+              date, act_symbol, expiration, strike, call_put,
+              bid, ask, vol, delta, gamma, theta, vega, rho
+            FROM ${{ vars.DOLT_DATABASE }} 
+            WHERE date = '$QUERY_DATE' 
+              AND (bid > 0 OR ask > 0)
+            ORDER BY act_symbol, expiration, call_put, strike
+          " -r csv > ../../"$DATA_CSV_PATH"
+
+          echo "data-available=true" >> $GITHUB_OUTPUT
           # Verify we have data
           echo "Data rows extracted: $(( $(wc -l < ../../"$DATA_CSV_PATH") - 1 ))"
 
@@ -235,21 +207,140 @@ jobs:
         working-directory: ${{ env.DOLT_DIR }}/${{ env.DATABASE_DIR }}
         run: |
           echo "Performing database maintenance..."
-
-          # Check database status
           dolt status
-
-          # Clean up any uncommitted changes that might cause issues
           dolt reset --hard HEAD || true
 
-          # Optional: garbage collection to reduce database size
-          # Uncomment if database size becomes an issue
-          # dolt gc
+      - name: Upload extracted data
+        uses: actions/upload-artifact@v4
+        with:
+          name: extracted-data
+          path: ${{ env.OUTPUT_DIR }}
+          retention-days: 1
+    
+      - name: Check source code changes
+        id: check-source
+        run: |
+          # Check if TypeScript source files changed in last commit
+          if git diff --quiet HEAD~1 HEAD -- src/ tsconfig.json package.json package-lock.json 2>/dev/null; then
+            echo "source-changed=false" >> $GITHUB_OUTPUT
+            echo "No source code changes detected"
+          else
+            echo "source-changed=true" >> $GITHUB_OUTPUT
+            echo "Source code changes detected"
+          fi
+        continue-on-error: true  # Don't fail on first run or git errors
+
+  # Job 2: Build TypeScript
+  build-typescript:
+    runs-on: ubuntu-latest
+    needs: [extract-data]
+    if: needs.extract-data.outputs.source-changed != 'false'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache TypeScript build
+        id: cache-ts-build
+        uses: actions/cache@v4
+        with:
+          path: |
+            dist/
+            node_modules/.cache/
+          key: ts-build-${{ hashFiles('src/**/*.ts', 'src/**/*.js', 'tsconfig.json', 'package.json') }}
+          restore-keys: |
+            ts-build-${{ hashFiles('src/**/*.ts', 'src/**/*.js', 'tsconfig.json') }}-
+            ts-build-
+
+      - name: Check build skip
+        id: build-skip
+        run: |
+          if [ "${{ steps.cache-ts-build.outputs.cache-hit }}" = "true" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Using cached TypeScript build"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "Building TypeScript from source"
+          fi
+
+      - name: Setup Node.js
+        if: steps.build-skip.outputs.skip != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ vars.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: steps.build-skip.outputs.skip != 'true'
+        run: npm ci
+
+      - name: Build TypeScript project
+        if: steps.build-skip.outputs.skip != 'true'
+        run: npm run build
+
+      - name: Prepare build artifacts
+        run: |
+          if [ "${{ steps.build-skip.outputs.skip }}" = "true" ]; then
+            echo "Preparing cached artifacts for upload"
+            # Ensure package files exist for next job
+            test -f package.json && test -f package-lock.json
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: typescript-build
+          path: |
+            dist/
+            node_modules/
+            package.json
+            package-lock.json
+          retention-days: 1
+
+  # Job 3: Process data and generate API files
+  process-data:
+    runs-on: ubuntu-latest
+    needs: [extract-data, build-typescript]
+    if: needs.extract-data.outputs.data-available == 'true'
+    outputs:
+      symbol-count: ${{ steps.process.outputs.symbol-count }}
+      contract-count: ${{ steps.process.outputs.contract-count }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download extracted data
+        uses: actions/download-artifact@v4
+        with:
+          name: extracted-data
+          path: ${{ env.OUTPUT_DIR }}
+
+      - name: Download TypeScript build
+        uses: actions/download-artifact@v4
+        with:
+          name: typescript-build
+          path: .
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ vars.NODE_VERSION }}
 
       - name: Process data with TypeScript
+        id: process
         run: |
           echo "Processing options data..."
           npm run ${{ vars.NPM_CMD }}
+
+          # Extract statistics for outputs
+          METADATA_JSON_PATH="./${{ env.API_DIR }}/${{ env.METADATA_JSON }}"
+          if [ -f "$METADATA_JSON_PATH" ]; then
+            SYMBOL_COUNT=$(jq -r '.symbolCount' "$METADATA_JSON_PATH")
+            CONTRACT_COUNT=$(jq -r '.totalContracts' "$METADATA_JSON_PATH")
+            echo "symbol-count=$SYMBOL_COUNT" >> $GITHUB_OUTPUT
+            echo "contract-count=$CONTRACT_COUNT" >> $GITHUB_OUTPUT
+          fi
         env:
           DATA_INPUT_PATH: ./${{ env.OUTPUT_DIR }}/${{ env.DATA_CSV }}
           API_OUTPUT_PATH: ./${{ env.API_DIR }}
@@ -297,9 +388,29 @@ jobs:
 
           echo "All validations passed"
 
+      - name: Upload processed API files
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-files
+          path: ${{ env.API_DIR }}
+          retention-days: 1
+
+  # Job 4: Generate documentation (parallel with data processing)
+  generate-docs:
+    runs-on: ubuntu-latest
+    needs: [extract-data]
+    if: needs.extract-data.outputs.data-available == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Generate API documentation
         run: |
           echo "Generating API documentation..."
+
+          # Create API directory
+          mkdir -p ./${{ env.API_DIR }}
 
           # Define repository url
           REPO_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
@@ -388,6 +499,48 @@ jobs:
           </html>
           EOF
 
+      - name: Upload documentation
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: ${{ env.API_DIR }}/index.html
+          retention-days: 1
+
+  # Job 5: Deploy and finalize (depends on all previous jobs)
+  deploy:
+    runs-on: ubuntu-latest
+    environment: github-pages
+    needs: [extract-data, process-data, generate-docs]
+    if: needs.extract-data.outputs.data-available == 'true'
+
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download API files
+        uses: actions/download-artifact@v4
+        with:
+          name: api-files
+          path: ${{ env.API_DIR }}
+
+      - name: Download documentation
+        uses: actions/download-artifact@v4
+        with:
+          name: documentation
+          path: ./temp-docs
+
+      - name: Merge documentation
+        run: |
+          cp ./temp-docs/index.html ./${{ env.API_DIR }}/
+          rm -rf ./temp-docs
+
       - name: Update README with statistics
         run: |
           echo "Updating README with latest statistics..."
@@ -466,24 +619,35 @@ jobs:
           *Generated automatically by GitHub Actions*
           EOF
 
-      - name: Commit and push changes
+      - name: Optimize Git configuration
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+          git config --local core.preloadindex true
+          git config --local core.fscache true
+          git config --local gc.auto 256
 
-          # Cache metadata JSON path
-          METADATA_JSON_PATH="${{ env.API_DIR }}/${{ env.METADATA_JSON }}"
+      - name: Selective commit and push
+        run: |
+          # Add files from the API directory and the root README
+          git add -A ${{ env.API_DIR }}/
+          git add README.md
 
-          # Check if there are changes to commit
-          if [ -n "$(git status --porcelain)" ]; then
-            git add ${{ env.API_DIR }}/ README.md
-            git commit -m "🔄 Update options data for ${ACTUAL_DATE:-$TARGET_DATE}
+          # Check if there are any staged changes to commit
+          if ! git diff --cached --quiet; then
+            # Get file count and metadata for commit message
+            CHANGED_FILES=$(git diff --cached --name-only | wc -l)
+            METADATA_JSON_PATH="${{ env.API_DIR }}/${{ env.METADATA_JSON }}"
             
+            git commit -m "🔄 Update options data for ${{ needs.extract-data.outputs.actual-date }}
+            
+            - Files changed: $CHANGED_FILES
             - Symbols: $(jq -r '.symbolCount' ./"$METADATA_JSON_PATH")
-            - Contracts: $(jq -r '.totalContracts' ./"$METADATA_JSON_PATH")
+            - Contracts: $(jq -r '.totalContracts' ./"$METADATA_JSON_PATH")"
             - Data date: $(jq -r '.dataDate' ./"$METADATA_JSON_PATH")"
             
-            git push
+            # Push with optimizations and safety
+            git push --force-with-lease
             echo "Changes committed and pushed"
           else
             echo "No changes to commit"
@@ -509,31 +673,62 @@ jobs:
         run: |
           rm -rf ${{ env.OUTPUT_DIR }}
 
+  # Job 6: Report final status
+  report-status:
+    runs-on: ubuntu-latest
+    needs: [extract-data, build-typescript, process-data, generate-docs, deploy]
+    if: always()
+
+    steps:
       - name: Report workflow status
-        if: always()
         run: |
-          if [ "${{ job.status }}" == "success" ]; then
-            # Cache metadata JSON path
-            METADATA_JSON_PATH="${{ env.API_DIR }}/${{ env.METADATA_JSON }}"
-
+          if [ "${{ needs.deploy.result }}" == "success" ]; then
             echo "✅ Workflow completed successfully"
-            echo "📅 Data date: ${ACTUAL_DATE:-$TARGET_DATE}"
-            echo "📊 Symbols processed: $(jq -r '.symbolCount' ./"$METADATA_JSON_PATH" 2>/dev/null || echo 'N/A')"
-            echo "📈 Total contracts: $(jq -r '.totalContracts' ./"$METADATA_JSON_PATH" 2>/dev/null || echo 'N/A')"
+            echo "📅 Data date: ${{ needs.extract-data.outputs.actual-date }}"
+            echo "📊 Symbols processed: ${{ needs.process-data.outputs.symbol-count }}"
+            echo "📈 Total contracts: ${{ needs.process-data.outputs.contract-count }}"
 
-            if [ "${{ steps.cache-database.outputs.cache-hit }}" == "true" ]; then
+            # Report database cache status
+            if [ "${{ needs.extract-data.outputs.cache-hit }}" == "true" ]; then
               echo "🚀 Used cached database for faster execution"
             else
               echo "📥 Fresh database clone performed"
             fi
+
+            # Report build optimization status
+            if [ "${{ needs.extract-data.outputs.source-changed }}" == "false" ]; then
+              echo "⚡ Skipped TypeScript build (no source changes)"
+            elif [ "${{ needs.build-typescript.result }}" == "skipped" ]; then
+              echo "⚡ TypeScript build job skipped"
+            else
+              echo "🔨 TypeScript build executed (source changes detected)"
+            fi
+            
           else
             echo "❌ Workflow failed"
-            echo "Check the logs above for error details"
+            echo "Check the individual job logs for error details"
+            
+            # Report which jobs failed
+            if [ "${{ needs.extract-data.result }}" == "failure" ]; then
+              echo "- Data extraction failed"
+            fi
+            if [ "${{ needs.build-typescript.result }}" == "failure" ]; then
+              echo "- TypeScript build failed"
+            fi
+            if [ "${{ needs.process-data.result }}" == "failure" ]; then
+              echo "- Data processing failed"
+            fi
+            if [ "${{ needs.generate-docs.result }}" == "failure" ]; then
+              echo "- Documentation generation failed"
+            fi
+            if [ "${{ needs.deploy.result }}" == "failure" ]; then
+              echo "- Deployment failed"
+            fi
           fi
 
       - name: Notify on failure
-        if: failure()
+        if: needs.deploy.result == 'failure'
         run: |
-          echo "🚨 Options data update failed for $TARGET_DATE"
+          echo "🚨 Options data update failed for ${{ needs.extract-data.outputs.actual-date }}"
           echo "Please check the workflow logs for details"
           # Add notification logic here (email, Slack, etc.) if needed

@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2025-09-04
+
+### 🚀 Performance
+
+- **GitHub Actions Optimization**
+  - **Parallel Job Execution**: Split GitHub Action workflow into parallel jobs to significantly reduce overall execution time
+  - **Smart Data Extraction**: Improved options data extraction with "Check-First, then Data" strategy:
+    - Fast `COUNT(*)` query to verify data existence on target date
+    - Single full data extraction query when data exists
+    - Automatic fallback with latest date query and single extraction when target date unavailable
+  - **Conditional Processing**: Skip unnecessary work when data is already current
+  - **Enhanced Build Performance**: Skip TypeScript build when no source code changes detected
+  - **Improved Caching**: Enhanced caching strategy for all build artifacts
+
+### 🔧 Fixed
+
+- **Workflow Configuration**
+  - **Dolt Executable Path**: Fixed bug by properly shifting the command to add dolt executable to system PATH
+
+### 📝 Changed
+
+- **Git Workflow Enhancement**
+  - **Optimized Git Configuration**: Updated commit and push workflow for improved performance and safety
+  - **Safer Push Strategy**: Implemented more robust Git push strategy for better reliability
+
 ## [1.0.2] - 2025-09-02
 
 ### 🔧 Fixed
