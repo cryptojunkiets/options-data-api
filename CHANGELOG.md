@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2025-09-05
+
+### 🔧 Fixed
+
+- **GitHub Actions Dolt PATH Issue**
+  - **Cached Binary PATH**: Fixed "dolt: command not found" error when using cached Dolt installations
+  - **Explicit PATH Export**: Added `export PATH="$HOME/.dolt/bin:$PATH"` to all steps that use Dolt commands
+  - **Cross-Step Compatibility**: Ensured Dolt binary is available regardless of cache hit/miss status
+  - **Verification Enhancement**: Combined PATH setup with immediate verification to catch issues early
+
 ## [1.0.3] - 2025-09-04
 
 ### 🚀 Performance

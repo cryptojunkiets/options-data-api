@@ -60,17 +60,16 @@ jobs:
             dolt-${{ vars.DOLT_VERSION }}-
             dolt-
 
-      - name: Add Dolt to PATH
-        run: echo "$HOME/.dolt/bin" >> $GITHUB_PATH
-
       - name: Install Dolt
         if: steps.cache-dolt.outputs.cache-hit != 'true'
         run: |
           sudo bash -c 'curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash'
           echo "$HOME/.dolt/bin" >> $GITHUB_PATH
 
-      - name: Verify Dolt installation
+      - name: Add Dolt to PATH and verify
         run: |
+          echo "$HOME/.dolt/bin" >> $GITHUB_PATH
+          export PATH="$HOME/.dolt/bin:$PATH"
           dolt version
           which dolt
 
@@ -98,6 +97,8 @@ jobs:
       - name: Clone Dolt database
         working-directory: ${{ env.DOLT_DIR }}
         run: |
+          export PATH="$HOME/.dolt/bin:$PATH"
+
           if [ "${{ github.event.inputs.force_fresh_clone }}" == "true" ] || [ ! -d "${{ env.DATABASE_DIR }}/.dolt" ]; then
             echo "Performing fresh clone of dolt database..."
             rm -rf ${{ env.DATABASE_DIR }}
@@ -152,6 +153,7 @@ jobs:
         if: steps.check-update.outputs.skip-update != 'true'
         working-directory: ${{ env.DOLT_DIR }}/${{ env.DATABASE_DIR }}
         run: |
+          export PATH="$HOME/.dolt/bin:$PATH"
           echo "Extracting data for date: $TARGET_DATE"
 
           # Create output directory
@@ -206,6 +208,7 @@ jobs:
       - name: Database maintenance
         working-directory: ${{ env.DOLT_DIR }}/${{ env.DATABASE_DIR }}
         run: |
+          export PATH="$HOME/.dolt/bin:$PATH"
           echo "Performing database maintenance..."
           dolt status
           dolt reset --hard HEAD || true
