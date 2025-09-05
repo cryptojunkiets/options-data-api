@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] - 2025-09-05
+
+### 🔧 Fixed
+
+- **GitHub Actions Workflow**
+  - **Environment Variable Consistency**: Fixed inconsistent usage of `~` and `$HOME` environment variables in Dolt installation and PATH configuration
+  - **Cross-Platform Compatibility**: Standardized on `$HOME` variable usage for improved reliability across different runner operating systems
+  - **Cache Path Alignment**: Ensured cache path and PATH export use consistent environment variable syntax
+
 ## [1.0.5] - 2025-09-05
 
 ### 🔧 Fixed

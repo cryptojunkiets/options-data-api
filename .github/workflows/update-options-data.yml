@@ -54,7 +54,7 @@ jobs:
         id: cache-dolt
         uses: actions/cache@v4
         with:
-          path: ~/.dolt
+          path: $HOME/.dolt
           key: dolt-${{ vars.DOLT_VERSION }}-${{ runner.os }}
           restore-keys: |
             dolt-${{ vars.DOLT_VERSION }}-
@@ -68,7 +68,7 @@ jobs:
       - name: Add Dolt to PATH
         run: echo "$HOME/.dolt/bin" >> $GITHUB_PATH
 
-      - name: Add Dolt to PATH and verify
+      - name: Verify Dolt is now in PATH
         run: |
           dolt version
           which dolt
