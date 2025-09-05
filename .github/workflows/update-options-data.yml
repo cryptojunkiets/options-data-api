@@ -642,7 +642,7 @@ jobs:
             
             - Files changed: $CHANGED_FILES
             - Symbols: $(jq -r '.symbolCount' ./"$METADATA_JSON_PATH")
-            - Contracts: $(jq -r '.totalContracts' ./"$METADATA_JSON_PATH")"
+            - Contracts: $(jq -r '.totalContracts' ./"$METADATA_JSON_PATH")
             - Data date: $(jq -r '.dataDate' ./"$METADATA_JSON_PATH")"
             
             # Push with optimizations and safety

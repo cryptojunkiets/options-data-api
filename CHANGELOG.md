@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7] - 2025-09-05
+
+### 🔧 Fixed
+
+- **GitHub Actions Workflow**
+  - **Commit Message Syntax**: Fixed shell script syntax error in "Selective commit and push" step caused by unmatched quotes in multi-line commit message
+  - **String Quoting**: Corrected quote pairing in git commit command that was causing "unexpected EOF while looking for matching quote" error
+
+### 🧹 Removed
+
+- **Development Files**
+  - **Test File Cleanup**: Removed `src/test.ts` file that was used for local development testing
+
 ## [1.0.6] - 2025-09-05
 
 ### 🔧 Fixed
