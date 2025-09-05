@@ -4,14 +4,14 @@ A free, daily-updated options chain data API served via GitHub Pages.
 
 ## 📊 Current Statistics
 - **Symbols:** 1525
-- **Total Contracts:** 93728
-- **Data Date:** 2025-08-29
-- **Last Updated:** 2025-09-02T07:50:19.975Z
+- **Total Contracts:** 95203
+- **Data Date:** 2025-09-04
+- **Last Updated:** 2025-09-05T07:46:45.168Z
 
 ## 🚀 API Endpoints
 
 ### Base URL
-`https://cryptojunkiets.github.io/options-data-api/api/`
+`https://cryptojunkiets.github.io/options-data-api/`
 
 ### Endpoints
 - `GET /symbols.json` - List of all available symbols
@@ -22,13 +22,13 @@ A free, daily-updated options chain data API served via GitHub Pages.
 
 ```bash
 # Get all available symbols
-curl https://cryptojunkiets.github.io/options-data-api/api/symbols.json
+curl https://cryptojunkiets.github.io/options-data-api/symbols.json
 
 # Get AAPL options
-curl https://cryptojunkiets.github.io/options-data-api/api/symbols/AAPL.json
+curl https://cryptojunkiets.github.io/options-data-api/symbols/AAPL.json
 
 # Get metadata
-curl https://cryptojunkiets.github.io/options-data-api/api/metadata.json
+curl https://cryptojunkiets.github.io/options-data-api/metadata.json
 ```
 
 ## 🔄 Update Schedule
