@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2025-09-05
+
+### 🔧 Fixed
+
+- **GitHub Actions Workflow**
+ - **Dolt Command Availability**: Fixed issue where `dolt` command was not available in the same step as PATH modification
+ - **Step Separation**: Separated Dolt PATH setup and usage into distinct workflow steps for proper command availability
+ - **Workflow Reliability**: Improved workflow execution reliability by ensuring proper PATH propagation between steps
+ - **Reverted Invalid Fix**: Removed ineffective inline PATH export and verification approaches from previous version
+
 ## [1.0.4] - 2025-09-05
 
 ### 🔧 Fixed
