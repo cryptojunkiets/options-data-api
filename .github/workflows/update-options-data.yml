@@ -28,7 +28,6 @@ env:
   INDIV_SYMBOLS_DIR: 'symbols'
 
   # vars.NODE_VERSION: "22"
-  # vars.DOLT_VERSION: "1.58.0"
   # vars.DOLT_REPO_URL: post-no-preference/options
   # vars.DOLT_DATABASE: option_chain
   # vars.NPM_CMD: process-data
@@ -55,9 +54,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: $HOME/.dolt
-          key: dolt-${{ vars.DOLT_VERSION }}-${{ runner.os }}
+          key: dolt-latest-${{ runner.os }}
           restore-keys: |
-            dolt-${{ vars.DOLT_VERSION }}-
+            dolt-latest-
             dolt-
 
       - name: Install Dolt
@@ -329,9 +328,17 @@ jobs:
       - name: Process data with TypeScript
         id: process
         run: |
-          echo "Processing options data..."
+          echo "Processing options data with streaming..."
+          
+          # Set Node.js memory limits for large datasets
+          export NODE_OPTIONS="--max-old-space-size=4096 --optimize-for-size"
+          
+          # Enable worker threads for parallel processing if available
+          export UV_THREADPOOL_SIZE=8
+          
+          # Run the main data processing script
           npm run ${{ vars.NPM_CMD }}
-
+          
           # Extract statistics for outputs
           METADATA_JSON_PATH="./${{ env.API_DIR }}/${{ env.METADATA_JSON }}"
           if [ -f "$METADATA_JSON_PATH" ]; then

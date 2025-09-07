@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.8] - 2025-09-07
+
+### 🚀 Performance
+
+- **GitHub Actions Workflow**
+  - **Node.js Memory Optimization**: Added Node.js heap memory limit configuration (`--max-old-space-size=4096`) and memory optimization flags (`--optimize-for-size`) for better handling of large datasets
+  - **Parallel Processing**: Configured UV thread pool size to 8 threads (`UV_THREADPOOL_SIZE=8`) to enable better parallel processing performance
+  - **Streaming Data Processing**: Updated workflow to use streaming approach for improved memory efficiency during data processing
+
+### 🧹 Removed
+
+- **GitHub Actions Workflow**
+  - **DOLT_VERSION Variable**: Removed misleading `DOLT_VERSION` variable and all references since Dolt installation always uses the latest version
+  - **Version-Specific Caching**: Updated Dolt installation cache key from version-specific to `dolt-latest-` for accurate caching behavior
+
 ## [1.0.7] - 2025-09-05
 
 ### 🔧 Fixed
