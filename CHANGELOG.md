@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.9] - 2025-09-07
+
+### 🔧 Fixed
+
+- **GitHub Actions Workflow**
+  - **Node.js Options Configuration**: Removed `--optimize-for-size` flag from NODE_OPTIONS due to compatibility error ("--optimize-for-size is not allowed in NODE_OPTIONS")
+  - **Memory Configuration**: Retained `--max-old-space-size=4096` flag for heap memory optimization while removing unsupported optimization flag
+  - **Workflow Stability**: Fixed Node.js process exit code 9 error that was preventing successful workflow execution
+
 ## [1.0.8] - 2025-09-07
 
 ### 🚀 Performance

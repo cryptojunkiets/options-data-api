@@ -331,7 +331,7 @@ jobs:
           echo "Processing options data with streaming..."
           
           # Set Node.js memory limits for large datasets
-          export NODE_OPTIONS="--max-old-space-size=4096 --optimize-for-size"
+          export NODE_OPTIONS="--max-old-space-size=4096"
           
           # Enable worker threads for parallel processing if available
           export UV_THREADPOOL_SIZE=8
