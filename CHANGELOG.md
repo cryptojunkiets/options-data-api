@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.11] - 2025-09-13
+
+### 🔧 Changed
+
+- **GitHub Actions Workflow**
+  - **Schedule Optimization**: Updated cron schedule from `0 3 * *1-5` to `0 7 * *2-6`, moving execution time from 3 AM UTC to 7 AM UTC and shifting weekday schedule from Monday-Friday to Tuesday-Saturday for better alignment with market data availability
+
 ## [1.0.10] - 2025-09-13
 
 ### 🚀 Performance
@@ -13,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **CPU-Aware Concurrency**: Updated MAX_CONCURRENCY to dynamically adjust based on available CPU cores (`Math.min(16, require('os').cpus().length)`) instead of fixed limit of 10
   - **Batch Size Optimization**: Increased BATCH_SIZE from 1000 to 5000 rows for more efficient batch processing
   - **Memory-Efficient Validation**: Restructured validation loop to process batches with immediate garbage collection hints every 8 batches
-  - **Progress Reporting Optimization**: Reduced progress update frequency to prevent console spam (every 4 batches for validation, every 25*concurrency for symbol processing)
+  - **Progress Reporting Optimization**: Reduced progress update frequency to prevent console spam (every 4 batches for validation, every 25\*concurrency for symbol processing)
 
 - **GitHub Actions Workflow**
   - **Garbage Collection Control**: Added `--expose-gc` flag to NODE_OPTIONS to enable explicit garbage collection control for memory-intensive operations
@@ -94,10 +101,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🔧 Fixed
 
 - **GitHub Actions Workflow**
- - **Dolt Command Availability**: Fixed issue where `dolt` command was not available in the same step as PATH modification
- - **Step Separation**: Separated Dolt PATH setup and usage into distinct workflow steps for proper command availability
- - **Workflow Reliability**: Improved workflow execution reliability by ensuring proper PATH propagation between steps
- - **Reverted Invalid Fix**: Removed ineffective inline PATH export and verification approaches from previous version
+- **Dolt Command Availability**: Fixed issue where `dolt` command was not available in the same step as PATH modification
+- **Step Separation**: Separated Dolt PATH setup and usage into distinct workflow steps for proper command availability
+- **Workflow Reliability**: Improved workflow execution reliability by ensuring proper PATH propagation between steps
+- **Reverted Invalid Fix**: Removed ineffective inline PATH export and verification approaches from previous version
 
 ## [1.0.4] - 2025-09-05
 

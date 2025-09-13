@@ -1,6 +1,6 @@
 {
   "name": "options-data-api",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "TypeScript processor for options chain data with GitHub Actions integration",
   "main": "dist/data-processor.js",
   "scripts": {
