@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.10] - 2025-09-13
+
+### 🚀 Performance
+
+- **Data Processing Engine**
+  - **CPU-Aware Concurrency**: Updated MAX_CONCURRENCY to dynamically adjust based on available CPU cores (`Math.min(16, require('os').cpus().length)`) instead of fixed limit of 10
+  - **Batch Size Optimization**: Increased BATCH_SIZE from 1000 to 5000 rows for more efficient batch processing
+  - **Memory-Efficient Validation**: Restructured validation loop to process batches with immediate garbage collection hints every 8 batches
+  - **Progress Reporting Optimization**: Reduced progress update frequency to prevent console spam (every 4 batches for validation, every 25*concurrency for symbol processing)
+
+- **GitHub Actions Workflow**
+  - **Garbage Collection Control**: Added `--expose-gc` flag to NODE_OPTIONS to enable explicit garbage collection control for memory-intensive operations
+
+- **Contract Validation Improvements**
+  - **Early Exit Validation**: Implemented early return for critical field validation to avoid unnecessary processing
+  - **Streamlined Field Validation**: Consolidated validation logic to reduce redundant checks and improve validation speed
+  - **Optimized Decimal Precision**: Replaced repeated `toFixed()` calls with single decimal multiplier calculation for better performance
+  - **Reduced Memory Allocations**: Eliminated REQUIRED_FIELDS array iteration in favor of direct field checks
+
+- **Symbol Grouping Optimization**
+  - **Two-Pass Grouping Algorithm**: Split grouping into separate grouping and sorting phases to avoid sorting single-contract symbols
+  - **Optimized Contract Comparison**: Implemented specialized `compareContracts` function with string comparison shortcuts
+  - **Conditional Sorting**: Only sort symbol groups when they contain multiple contracts
+
+- **JSON Processing Enhancement**
+  - **Simplified Buffer Conversion**: Removed unnecessary JSON formatting (removed `null, 2` prettification) for smaller file sizes and faster I/O
+
+### 🔧 Fixed
+
+- **Type Safety**: Improved non-null assertion safety in validation and parsing logic
+- **Error Handling**: Enhanced error context preservation throughout the validation pipeline
+- **Memory Management**: Added strategic garbage collection hints to prevent memory buildup during large dataset processing
+
+### 📝 Changed
+
+- **Configuration Updates**: Moved from hardcoded constants to dynamic system-aware configuration
+- **Code Organization**: Improved separation of concerns between validation, grouping, and processing phases
+
 ## [1.0.9] - 2025-09-07
 
 ### 🔧 Fixed

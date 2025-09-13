@@ -328,10 +328,10 @@ jobs:
       - name: Process data with TypeScript
         id: process
         run: |
-          echo "Processing options data with streaming..."
+          echo "Processing options data..."
           
           # Set Node.js memory limits for large datasets
-          export NODE_OPTIONS="--max-old-space-size=4096"
+          export NODE_OPTIONS="--max-old-space-size=4096 --expose-gc"
           
           # Enable worker threads for parallel processing if available
           export UV_THREADPOOL_SIZE=8

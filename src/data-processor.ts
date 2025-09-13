@@ -32,7 +32,7 @@ import {
 export class OptionsDataProcessor {
   private dataInputPath: string;
   private apiOutputPath: string;
-  public stats: ProcessingStats;
+  private stats: ProcessingStats;
   private startTime: number;
 
   constructor() {
@@ -136,7 +136,7 @@ export class OptionsDataProcessor {
   /**
    * Read and parse input CSV data
    */
-  public async readInputData(): Promise<RawOptionContract[]> {
+  private async readInputData(): Promise<RawOptionContract[]> {
     try {
       const rawData = await readCsvFile(this.dataInputPath);
       this.stats.totalRows = rawData.length;
@@ -156,12 +156,17 @@ export class OptionsDataProcessor {
   /**
    * Validate raw data and return clean contracts
    */
-  public async validateData(rawData: RawOptionContract[]): Promise<ProcessedOptionContract[]> {
+  private async validateData(rawData: RawOptionContract[]): Promise<ProcessedOptionContract[]> {
     const validContracts: ProcessedOptionContract[] = [];
-    const batchSize = 1000;
+    const batchSize = CONFIG.BATCH_SIZE;
+    const totalRows = rawData.length;
 
-    for (let i = 0; i < rawData.length; i += batchSize) {
+    const updateThreshold = batchSize * 4;
+    const gcThreshold = batchSize * 8;
+
+    for (let i = 0; i < totalRows; i += batchSize) {
       const batch = rawData.slice(i, i + batchSize);
+      const batchResults: ProcessedOptionContract[] = [];
 
       for (let j = 0; j < batch.length; j++) {
         const row = batch[j];
@@ -181,27 +186,32 @@ export class OptionsDataProcessor {
           this.stats.warnings.push(...result.warnings.map(w => `Row ${rowInfo}: ${w}`));
         }
 
-        if (!result.isValid) {
+        if (result.isValid && result.cleanedData) {
+          this.stats.validRows++;
+          batchResults.push(result.cleanedData);
+        } else {
           this.stats.invalidRows++;
           result.errors.forEach(error => {
             this.stats.errors.push(createError('validation', error, row, rowInfo, row.act_symbol));
           });
-        } else {
-          this.stats.validRows++;
-          validContracts.push(result.cleanedData!);
         }
       }
 
+      validContracts.push(...batchResults);
+
       // Progress update for large datasets
-      if (i % (batchSize * 10) === 0) {
-        console.log(
-          `   Validated ${Math.min(i + batchSize, rawData.length)} / ${rawData.length} rows`
-        );
+      if (i % updateThreshold === 0) {
+        console.log(`   Validated ${Math.min(i + batchSize, totalRows)} / ${totalRows} rows`);
+      }
+
+      // Periodic garbage collection hint
+      if (i % gcThreshold === 0 && global.gc) {
+        global.gc();
       }
     }
 
     console.log(
-      `✅ Validation complete: ${validContracts.length} valid contracts from ${rawData.length} rows`
+      `✅ Validation complete: ${validContracts.length} valid contracts from ${totalRows} rows`
     );
     console.log(`   Invalid rows: ${this.stats.invalidRows}`);
     console.log(`   Warnings: ${this.stats.warnings.length}`);
@@ -212,17 +222,23 @@ export class OptionsDataProcessor {
   /**
    * Process symbols in parallel or sequential batches
    */
-  public async processSymbols(
+  private async processSymbols(
     symbolGroups: Map<string, ProcessedOptionContract[]>
   ): Promise<SymbolProcessingResult[]> {
     const symbols = Array.from(symbolGroups.keys());
     const results: SymbolProcessingResult[] = [];
     const concurrency = Math.min(CONFIG.MAX_CONCURRENCY, symbols.length);
+    const updateThreshold = concurrency * 25;
 
     console.log(`📈 Processing ${symbols.length} symbols with concurrency: ${concurrency}`);
 
     // Process in batches to control memory usage
     for (let i = 0; i < symbols.length; i += concurrency) {
+      // Progress update
+      if (i % updateThreshold === 0 && i > 0) {
+        console.log(`   Processed ${Math.min(i, symbols.length)} / ${symbols.length} symbols`);
+      }
+
       const batch = symbols.slice(i, i + concurrency);
       const batchPromises = batch.map(symbol =>
         this.processSymbol(symbol, symbolGroups.get(symbol)!)
@@ -256,11 +272,6 @@ export class OptionsDataProcessor {
           });
         }
       });
-
-      // Progress update
-      console.log(
-        `   Processed ${Math.min(i + concurrency, symbols.length)} / ${symbols.length} symbols`
-      );
 
       // Force garbage collection between batches if available
       if (global.gc) {
@@ -328,7 +339,7 @@ export class OptionsDataProcessor {
   /**
    * Generate API index files
    */
-  public async generateApiFiles(
+  private async generateApiFiles(
     symbolGroups: Map<string, ProcessedOptionContract[]>,
     processingResults: SymbolProcessingResult[]
   ): Promise<void> {

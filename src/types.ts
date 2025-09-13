@@ -18,8 +18,6 @@ export interface RawOptionContract {
   rho: number;
 }
 
-// add sortKey to optimize sorting of symbols grouping in groupBySymbol
-// sortKey: `${expiration}_${type}_${strike.toFixed(2).padStart(7, '0')}`
 export interface ProcessedOptionContract {
   date: string;
   symbol: string;
@@ -117,15 +115,15 @@ export interface SymbolProcessingResult {
 export const CONFIG = {
   MIN_BID_ASK: 0, // Only process contracts with bid > 0 OR ask > 0
   MAX_FILE_SIZE: 50 * 1024 * 1024, // 50MB per symbol file
-  MAX_CONCURRENCY: 10,
+  MAX_CONCURRENCY: Math.min(16, require('os').cpus().length), // CPU-aware concurrency
   DATE_FORMAT: 'YYYY-MM-DD',
   DECIMAL_PRECISION: 4,
-  REQUIRED_FIELDS: ['date', 'act_symbol', 'expiration', 'strike', 'call_put', 'bid', 'ask', 'vol'],
   OUTPUT_FILES: {
     SYMBOLS: 'symbols.json',
     METADATA: 'metadata.json',
     SYMBOLS_DIR: 'symbols',
   },
+  BATCH_SIZE: 5000,
 } as const;
 
 // Utility types
