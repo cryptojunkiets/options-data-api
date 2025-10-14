@@ -6,7 +6,7 @@ A free, daily-updated options chain data API served via GitHub Pages.
 - **Symbols:** 1530
 - **Total Contracts:** 93852
 - **Data Date:** 2025-10-07
-- **Last Updated:** 2025-10-11T07:13:43.675Z
+- **Last Updated:** 2025-10-14T07:16:16.988Z
 
 ## 🚀 API Endpoints
 
