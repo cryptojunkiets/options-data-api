@@ -4,9 +4,9 @@ A free, daily-updated options chain data API served via GitHub Pages.
 
 ## 📊 Current Statistics
 - **Symbols:** 1526
-- **Total Contracts:** 118186
-- **Data Date:** 2025-12-11
-- **Last Updated:** 2025-12-12T07:21:27.608Z
+- **Total Contracts:** 120676
+- **Data Date:** 2025-12-15
+- **Last Updated:** 2025-12-16T07:22:21.003Z
 
 ## 🚀 API Endpoints
 
