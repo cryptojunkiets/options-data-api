@@ -3,10 +3,10 @@
 A free, daily-updated options chain data API served via GitHub Pages.
 
 ## 📊 Current Statistics
-- **Symbols:** 1529
-- **Total Contracts:** 113664
-- **Data Date:** 2026-09-21
-- **Last Updated:** 2026-09-22T12:18:40.449Z
+- **Symbols:** 1531
+- **Total Contracts:** 112149
+- **Data Date:** 2026-09-22
+- **Last Updated:** 2026-09-23T12:36:10.670Z
 
 ## 🚀 API Endpoints
 
